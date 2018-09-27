@@ -19,6 +19,7 @@
 
 #include "can.h"  
 #include "timestamp.h"
+#include "control.h"
 
 /* --------------------- Definitions and static variables ------------------ */
 //canSniffer Configuration
@@ -27,17 +28,18 @@
 #define RX_GPIO_NUM                     5
 #define CAN_EN_GPIO           22
 #define RX_BUFFER_MAX                   20
-#define EXAMPLE_TAG                     "CAN"
+#define CAN_TAG                     "CAN"
 
 
 extern SemaphoreHandle_t can_rx;
 extern SemaphoreHandle_t can_tx;
 extern SemaphoreHandle_t http_rx;
 extern SemaphoreHandle_t http_tx;
+extern SemaphoreHandle_t http_tx_wait;
 
-extern QueueHandle_t rxCanQueue;
-extern QueueHandle_t txCanQueue;
-
+QueueHandle_t rxCanQueue;
+QueueHandle_t txCanQueue;
+extern QueueHandle_t controlEvents;
 
 void testPrintQueue(void);
 
@@ -46,15 +48,13 @@ void testPrintQueue(void);
 static const can_filter_config_t f_config = CAN_FILTER_CONFIG_ACCEPT_ALL();
 static const can_timing_config_t t_config = CAN_TIMING_CONFIG_500KBITS();
 //Set TX queue length to 0 due to listen only mode
-/*static const can_general_config_t g_config = {.mode = CAN_MODE_NORMAL,
+static const can_general_config_t g_config = {.mode = CAN_MODE_NORMAL,
                                               .tx_io = TX_GPIO_NUM, .rx_io = RX_GPIO_NUM,
                                               .clkout_io = CAN_IO_UNUSED, .bus_off_io = CAN_IO_UNUSED,
                                               .tx_queue_len = 5, .rx_queue_len = 5,
                                               .alerts_enabled = CAN_ALERT_NONE,
                                               .clkout_divider = 0};
-      */
-      
-      static const can_general_config_t g_config = CAN_GENERAL_CONFIG_DEFAULT(TX_GPIO_NUM, RX_GPIO_NUM, CAN_MODE_NORMAL);
+
 uint8_t cntRxCan = 0;
 
 
@@ -66,36 +66,29 @@ void can_receive_task(void *arg)
    
    // 
    // testCanDataGenerate();
-    esp_err_t res;   
-    
-      ESP_LOGI(EXAMPLE_TAG, "we CAN  receive"); 
+     ESP_LOGI(CAN_TAG, "Wait for CAN");    
     while (1) {
-       
-        
+            
         can_message_t rx_msg;
-        res = can_receive(&rx_msg, portMAX_DELAY);
-        if(res == ESP_OK)
+        esp_err_t res = can_receive(&rx_msg, portMAX_DELAY);
+        if (res == ESP_OK)
         {  
-        
-          ESP_LOGI(EXAMPLE_TAG, "CAN response is here");
-          can_msg_timestamped msg_timestamped;
-               
-          msg_timestamped.id = cntRxCan++;
-          msg_timestamped.timestamp = get_timestamp();
-          msg_timestamped.msg.identifier = rx_msg.identifier;
-          msg_timestamped.msg.data_length_code = rx_msg.data_length_code;
-          for (int i=0; i<rx_msg.data_length_code; i++)
-          {
-            msg_timestamped.msg.data[i] = rx_msg.data[i];
-          }
-                //printCanMessage(&rx_msg,iterations);
-         xQueueSend(rxCanQueue, &msg_timestamped, portMAX_DELAY);
-         
-        }
-        else 
+        ESP_LOGI(CAN_TAG, "REceived");
+        can_msg_timestamped msg_timestamped;
+        msg_timestamped.id = cntRxCan++;
+        msg_timestamped.timestamp = get_timestamp();
+        msg_timestamped.msg.identifier = rx_msg.identifier;
+        msg_timestamped.msg.data_length_code = rx_msg.data_length_code;
+        for (int i=0; i<rx_msg.data_length_code; i++)
         {
-            ESP_LOGI(EXAMPLE_TAG, " No CAN response");
+          msg_timestamped.msg.data[i] = rx_msg.data[i];
         }
+              //printCanMessage(&rx_msg,iterations);
+       ControlEvents cs2 = EV_CAN_RECEIVED;    
+       xQueueSend(controlEvents, &cs2, portMAX_DELAY);
+       
+       xQueueSend(rxCanQueue, &msg_timestamped, portMAX_DELAY);
+      }
     }
 
     
@@ -105,10 +98,10 @@ void can_receive_task(void *arg)
 void can_transmit_task(void *arg)
 {
     can_msg_timestamped msg_timestamped;
-      xSemaphoreTake(can_tx, portMAX_DELAY);
+    
     
    // xSemaphoreTake(tx_sem, portMAX_DELAY);
-    
+    xSemaphoreTake(can_tx, portMAX_DELAY); 
     while (1)
     {
       
@@ -116,15 +109,16 @@ void can_transmit_task(void *arg)
         if (res == pdTRUE)
         { //Тут ещё нужно прикрутить управаление временем отправки в соответствии с таймстампом.
           // Может кагда-то понадобится.
-          
-               msg_timestamped.msg.flags = CAN_MSG_FLAG_NONE;
+           ESP_LOGI(CAN_TAG, "Send to CAN");   
+            msg_timestamped.msg.flags = CAN_MSG_FLAG_NONE;
              can_transmit(&msg_timestamped.msg, portMAX_DELAY);
-             ESP_LOGI(EXAMPLE_TAG, "CAN command is sent A:%d D:%d", msg_timestamped.msg.identifier, msg_timestamped.msg.data[0]);
              
-//xQueueSend(rxCanQueue, &msg_timestamped, portMAX_DELAY);  //DEBUG
+             ControlEvents cs2 = EV_CAN_TRANSMITTED;    
+             xQueueSend(controlEvents, &cs2, portMAX_DELAY);
         }
     
     }
+    
  }  
 
 //---------------------------------------------------------------//
@@ -141,15 +135,15 @@ void canInit(void)
            
     //Install and start CAN driver
     ESP_ERROR_CHECK(can_driver_install(&g_config, &t_config, &f_config));
-    ESP_LOGI(EXAMPLE_TAG, "Driver installed");
+    ESP_LOGI(CAN_TAG, "Driver installed");
     ESP_ERROR_CHECK(can_start());
-    ESP_LOGI(EXAMPLE_TAG, "Driver started");
+    ESP_LOGI(CAN_TAG, "Driver started");
 
   //  xSemaphoreGive(rx_sem);                     //Start RX task
 }
 
 //---------------------------------------------------------------//
-void testCanDataGenerate(void)
+/*void testCanDataGenerate(void)
 {
   can_msg_timestamped msg_timestamped;
   
@@ -170,7 +164,7 @@ void testCanDataGenerate(void)
 //  testPrintQueue();  
 
 }
-
+  */
 /*
 void testPrintQueue(void)
 {

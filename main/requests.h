@@ -14,4 +14,3 @@ char* request_server_masterrequest(void);
 char* request_heartbeat(void);
 void request_can_send (CJSON_PUBLIC(cJSON *)jdata);
 char* request_response(void);
-char* request_server_clientresponse(void);
