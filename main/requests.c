@@ -71,8 +71,10 @@ char* request_server_masterrequest(void)
   
       can_msg_timestamped msg;
       
-      while (cntMsg > 0)
+      int cnt = 0;
+      while (cntMsg > 0 && cnt<6)
       {
+        cnt++;
         BaseType_t res =  xQueueReceive(rxCanQueue, &msg, 0);
   //ESP_LOGI("SM cycle", "reading:%d", res );      
         if (res == pdTRUE)
