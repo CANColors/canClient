@@ -14,7 +14,7 @@
 #if CONFIG_MQTT_BUFFER_SIZE
 #define MQTT_BUFFER_SIZE_BYTE       CONFIG_MQTT_BUFFER_SIZE
 #else
-#define MQTT_BUFFER_SIZE_BYTE       1024
+#define MQTT_BUFFER_SIZE_BYTE       (1024*10)
 #endif
 
 #define MQTT_MAX_HOST_LEN           64

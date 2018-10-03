@@ -42,7 +42,8 @@ QueueHandle_t txCanQueue;
 extern QueueHandle_t controlEvents;
 
 void testPrintQueue(void);
-
+static void sendMultyFrameFCF(can_message_t* rx_msg);
+static uint32_t   getAddress (can_message_t* rx_msg);
 
 
 static const can_filter_config_t f_config = CAN_FILTER_CONFIG_ACCEPT_ALL();
@@ -56,6 +57,11 @@ static const can_general_config_t g_config = {.mode = CAN_MODE_NORMAL,
                                               .clkout_divider = 0};
 
 uint8_t cntRxCan = 0;
+uint8_t mfCnt = 0;
+uint16_t mfLen = 0;
+uint8_t mfBSCnt = 0;
+uint8_t mfBSMax = ISOTP_MF_BS;
+uint8_t mfSTMin = ISOTP_MF_STmin;
 
 
 /* --------------------------- Tasks and Functions -------------------------- */
@@ -73,16 +79,53 @@ void can_receive_task(void *arg)
         esp_err_t res = can_receive(&rx_msg, portMAX_DELAY);
         if (res == ESP_OK)
         {  
-        ESP_LOGI(CAN_TAG, "REceived");
-        can_msg_timestamped msg_timestamped;
-        msg_timestamped.id = cntRxCan++;
-        msg_timestamped.timestamp = get_timestamp();
-        msg_timestamped.msg.identifier = rx_msg.identifier;
-        msg_timestamped.msg.data_length_code = rx_msg.data_length_code;
-        for (int i=0; i<rx_msg.data_length_code; i++)
-        {
-          msg_timestamped.msg.data[i] = rx_msg.data[i];
-        }
+          uint8_t mff = (rx_msg.data[0] & 0xF0) >> 4;
+          if (mff == 0)  //SingleFrame message
+          {
+              
+                       
+            
+          }
+          else //MultyFrame message
+          {
+              if (mff == 1)       //First Frame
+              {
+                sendMultyFrameFCF(&rx_msg);
+                mfLen = ((rx_msg.data[0]& 0x0F)<<8) +rx_msg.data[1];
+                mfCnt = 0; 
+                mfBSCnt = 0;
+                mfBSMax = ISOTP_MF_BS;
+                mfSTMin = ISOTP_MF_STmin;
+              } 
+              else if  (mff == 2 && mfLen !=0)   //Consequitive Frame
+              {
+                mfCnt++;
+                if (mfBSCnt >= mfBSMax )
+                {
+                     sendMultyFrameFCF(&rx_msg);
+                     mfBSCnt=0;
+                    
+                     
+                }
+               else if  (mff == 3 && mfLen !=0)   //Flow Control Frame
+               {
+                     mfBSCnt=0;
+                     mfBSMax = rx_msg.data[1];
+                     mfSTMin = rx_msg.data[2]; 
+               }
+              }
+            
+          }
+           ESP_LOGI(CAN_TAG, "REceived");
+            can_msg_timestamped msg_timestamped;
+            msg_timestamped.id = cntRxCan++;
+            msg_timestamped.timestamp = get_timestamp();
+            msg_timestamped.msg.identifier = rx_msg.identifier;
+            msg_timestamped.msg.data_length_code = rx_msg.data_length_code;
+            for (int i=0; i<rx_msg.data_length_code; i++)
+            {
+              msg_timestamped.msg.data[i] = rx_msg.data[i];
+            }  
               //printCanMessage(&rx_msg,iterations);
        ControlEvents cs2 = EV_CAN_RECEIVED;    
        xQueueSend(controlEvents, &cs2, portMAX_DELAY);
@@ -185,3 +228,27 @@ void testPrintQueue(void)
      
   */     
  
+static void sendMultyFrameFCF(can_message_t* rx_msg)
+{
+    can_message_t tx_msg;
+    tx_msg.identifier = getAddress(rx_msg);
+    tx_msg.data_length_code = 8;
+    tx_msg.flags =  CAN_MSG_FLAG_NONE;
+    tx_msg.data[0]=0x30;
+    tx_msg.data[1]= mfBSMax;
+    tx_msg.data[2]= mfSTMin;
+    tx_msg.data[3]= 0x00; 
+    tx_msg.data[4]= 0x00;
+    tx_msg.data[5]= 0x00;
+    tx_msg.data[6]= 0x00;
+    tx_msg.data[7]= 0x00;
+          
+    can_transmit(&tx_msg, portMAX_DELAY);
+
+}
+
+static uint32_t   getAddress (can_message_t* rx_msg)
+{
+   return 0x7DF;
+
+}

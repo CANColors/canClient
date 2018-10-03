@@ -21,7 +21,7 @@ extern const QueueHandle_t rxCanQueue;
 extern QueueHandle_t txCanQueue;
 extern uint16_t cntTransaction;
 
-
+uint8_t multyFrameFlag = 0;
 
 char* request_login()
 {
@@ -72,13 +72,17 @@ char* request_server_masterrequest(void)
       can_msg_timestamped msg;
       
       int cnt = 0;
-      while (cntMsg > 0 && cnt<6)
+      while (cntMsg > 0 && cnt<60)
       {
         cnt++;
-        BaseType_t res =  xQueueReceive(rxCanQueue, &msg, 0);
+        BaseType_t res =  xQueuePeek(rxCanQueue, &msg, 0);
   //ESP_LOGI("SM cycle", "reading:%d", res );      
         if (res == pdTRUE)
         {
+          uint8_t firstFrameFlag = (msg.msg.data[0] && 0xF0)>>4; 
+         // if (firstFrameFlag != 1 || cnt != 0)
+          {
+          xQueueReceive(rxCanQueue, &msg, 0);
           CJSON_PUBLIC(cJSON *) command =  cJSON_CreateObject();
           cJSON_AddNumberToObject(command, "id",msg.id);
           cJSON_AddStringToObject( command,"type","canpackage");
@@ -104,6 +108,7 @@ char* request_server_masterrequest(void)
              
              
           cntMsg = uxQueueMessagesWaiting( rxCanQueue );
+          }
      //     ESP_LOGI("SM cycle", "cntMsg =>  %d", cntMsg );                                                                                    
         }
         else

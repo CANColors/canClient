@@ -8,6 +8,9 @@
 /* ========================================================================== */
 #include "driver/can.h"
 
+#define ISOTP_MF_BS      0xFF
+#define ISOTP_MF_STmin   0x05 
+
 typedef struct {
 uint id;
 uint32_t timestamp;
