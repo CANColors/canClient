@@ -81,16 +81,17 @@ char* request_server_masterrequest(void)
   //ESP_LOGI("SM cycle", "reading:%d", res );      
         if (res == pdTRUE)
         {
-          uint8_t firstFrameFlag = (msg.msg.data[0] && 0xF0)>>4; 
+          //uint8_t firstFrameFlag = (msg.msg.data[0] && 0xF0)>>4; 
          // if (firstFrameFlag != 1 || cnt != 0)
           {
           xQueueReceive(rxCanQueue, &msg, 0);
           CJSON_PUBLIC(cJSON *) command =  cJSON_CreateObject();
           cJSON_AddNumberToObject(command, "id",msg.id);
           cJSON_AddStringToObject( command,"type","canpackage");
-          sprintf(buf,"%ud", msg.timestamp);
-          cJSON_AddStringToObject( command,"ts",buf);
-   
+         
+          //sprintf(buf,"%u", msg.timestamp);
+          //cJSON_AddStringToObject( command,"ts",buf);
+          cJSON_AddNumberToObject(command, "ts",msg.timestamp);
           cJSON_AddNumberToObject(command, "ad",msg.msg.identifier);
           cJSON_AddNumberToObject(command, "dl",msg.msg.data_length_code);
          
